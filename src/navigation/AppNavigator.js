@@ -1,12 +1,12 @@
 import React, { useContext } from 'react';
 import { createStackNavigator } from '@react-navigation/stack';
 import { ThemeContext } from '../context/ThemeContext';
-import AddEditAlbum from '../screens/AddEditAlbum';
-import AddEditTrack from '../screens/AddEditTrack';
 import AlbumDetails from '../screens/AlbumDetails';
 import TrackDetails from '../screens/TrackDetails';
 import Settings from '../screens/Settings';
 import MainTabs from '../screens/MainTabs';
+import SearchScreen from '../screens/SearchScreen';
+import SyncScreen from '../screens/SyncScreen';
 
 const Stack = createStackNavigator();
 
@@ -29,6 +29,11 @@ export default function AppNavigator() {
         options={{ headerShown: false }}
       />
       <Stack.Screen
+        name="SearchScreen"
+        component={SearchScreen}
+        options={{ title: 'Поиск' }}
+      />
+      <Stack.Screen
         name="AlbumDetails"
         component={AlbumDetails}
         options={{ title: 'Детали альбома' }}
@@ -39,16 +44,13 @@ export default function AppNavigator() {
         options={{ title: 'Детали трека' }}
       />
       <Stack.Screen
-        name="AddEditAlbum"
-        component={AddEditAlbum}
-      />
-      <Stack.Screen
-        name="AddEditTrack"
-        component={AddEditTrack}
-      />
-      <Stack.Screen
         name="Settings"
         component={Settings}
+      />
+      <Stack.Screen
+        name="SyncScreen"
+        component={SyncScreen}
+        options={{ title: 'Синхронизация' }}
       />
     </Stack.Navigator>
   );

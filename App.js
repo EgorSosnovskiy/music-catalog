@@ -6,6 +6,9 @@ import { initDB, getAlbums, getTracks } from './src/database';
 import { ThemeProvider } from './src/context/ThemeContext';
 import { I18nextProvider } from 'react-i18next';
 import i18n, { loadSavedLanguage } from './src/i18n';
+import { networkService } from './src/services/NetworkService';
+import { initCache } from './src/services/CacheService';
+import { initializeSyncService } from './src/services/SyncService';
 
 export default function App() {
   const [isReady, setIsReady] = useState(false);
@@ -16,14 +19,23 @@ export default function App() {
         // 1. Сначала инициализируем БД (создаём db)
         await initDB();
 
-        // 2. Теперь БД готова – параллельно загружаем язык и предзагружаем данные
+        // 2. Инициализируем кэш для API
+        await initCache();
+
+        // 3. Инициализируем сетевой мониторинг
+        await networkService.init();
+
+        // 4. Инициализируем сервис синхронизации
+        await initializeSyncService();
+
+        // 5. Теперь БД готова – параллельно загружаем язык и предзагружаем данные
         await Promise.all([
           loadSavedLanguage(),
-          getAlbums(), // эти функции теперь используют существующее соединение
+          getAlbums(),
           getTracks(),
         ]);
 
-        // 3. Держим сплеш минимум 2 секунды (можно убрать, если не нужно)
+        // 6. Держим сплеш минимум 2 секунды 
         await new Promise(resolve => setTimeout(resolve, 2000));
       } catch (error) {
         console.error('App initialization error:', error);

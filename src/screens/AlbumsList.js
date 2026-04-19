@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useContext, useRef } from 'react';
+import React, { useCallback, useContext, useRef, useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -7,38 +7,67 @@ import {
   TouchableOpacity,
   Alert,
   ActivityIndicator,
+  Image,
+  TextInput,
+  Modal,
+  ScrollView,
+  Pressable,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import { ThemeContext } from '../context/ThemeContext';
-import { getAlbums, deleteAlbum } from '../database';
+import { useAlbumsViewModel } from '../viewmodels/AlbumsViewModel';
+import Fuse from 'fuse.js';
 
 export default function AlbumsList({ navigation }) {
   const { theme } = useContext(ThemeContext);
   const { t } = useTranslation();
-  const [albums, setAlbums] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const isFirstLoad = useRef(true); // флаг первого запуска
+  const { albums, loading, loadAlbums, removeAlbum } = useAlbumsViewModel();
+  const isFirstLoad = useRef(true);
 
-  const loadAlbums = async (showLoader = true) => {
-    if (showLoader) setLoading(true);
-    const data = await getAlbums();
-    setAlbums(data);
-    if (showLoader) setLoading(false);
-  };
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedArtist, setSelectedArtist] = useState(null);
+  const [showArtistFilter, setShowArtistFilter] = useState(false);
 
-    // При первом фокусе загружаем с индикатором
+  const fuse = useMemo(() => new Fuse(albums, {
+    keys: ['title', 'artist'],
+    threshold: 0.3,
+    includeScore: true,
+  }), [albums]);
+
+  const uniqueArtists = useMemo(() => {
+    const artists = new Set();
+    albums.forEach(album => {
+      if (album.artist) artists.add(album.artist);
+    });
+    return Array.from(artists).sort();
+  }, [albums]);
+
+  const filteredAlbums = useMemo(() => {
+    let result = albums;
+
+    if (searchQuery.trim()) {
+      const searchResults = fuse.search(searchQuery.trim());
+      result = searchResults.map(r => r.item);
+    }
+
+    if (selectedArtist) {
+      result = result.filter(album => album.artist === selectedArtist);
+    }
+
+    return result;
+  }, [albums, searchQuery, selectedArtist, fuse]);
+
   useFocusEffect(
     useCallback(() => {
       if (isFirstLoad.current) {
         loadAlbums(true);
         isFirstLoad.current = false;
       } else {
-        // При последующих фокусах загружаем без индикатора
         loadAlbums(false);
       }
-    }, [])
+    }, [loadAlbums])
   );
 
   const handleDelete = (id) => {
@@ -51,8 +80,7 @@ export default function AlbumsList({ navigation }) {
           text: t('delete'),
           style: 'destructive',
           onPress: async () => {
-            await deleteAlbum(id);
-            loadAlbums();
+            await removeAlbum(id);
           },
         },
       ],
@@ -62,7 +90,14 @@ export default function AlbumsList({ navigation }) {
 
   const renderItem = ({ item }) => (
     <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
-      {/* Нажатие на карточку ведёт на детали */}
+      {item.coverUri ? (
+        <Image source={{ uri: item.coverUri }} style={styles.cover} />
+      ) : (
+        <View style={[styles.coverPlaceholder, { backgroundColor: theme.colors.background }]}>
+          <Ionicons name="albums" size={24} color={theme.colors.textSecondary} />
+        </View>
+      )}
+
       <TouchableOpacity
         style={styles.cardContent}
         onPress={() => navigation.navigate('AlbumDetails', { id: item.id })}
@@ -76,60 +111,129 @@ export default function AlbumsList({ navigation }) {
         ) : null}
       </TouchableOpacity>
 
-      {/* Кнопка редактирования (карандаш) */}
-      <TouchableOpacity
-        onPress={() => navigation.navigate('AddEditAlbum', { album: item })}
-        style={styles.editButton}
-      >
-        <Ionicons name="pencil" size={24} color={theme.colors.accent} />
-      </TouchableOpacity>
-
-      {/* Кнопка удаления (корзина) */}
       <TouchableOpacity onPress={() => handleDelete(item.id)} style={styles.deleteButton}>
         <Ionicons name="trash-outline" size={24} color={theme.colors.error} />
       </TouchableOpacity>
     </View>
   );
 
-if (loading) {
-  return (
-    <View style={[
-      styles.container,
-      {
-        backgroundColor: theme.colors.background,
-        justifyContent: 'center',
-        alignItems: 'center'
-      }
-    ]}>
-      <ActivityIndicator size="large" color={theme.colors.accent} />
-    </View>
-  );
-}
+  if (loading) {
+    return (
+      <View style={[styles.container, { backgroundColor: theme.colors.background, justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color={theme.colors.accent} />
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
-      {albums.length === 0 ? (
+      <View style={[styles.searchContainer, { backgroundColor: theme.colors.surface }]}>
+        <View style={[styles.searchInputContainer, { backgroundColor: theme.colors.background }]}>
+          <Ionicons name="search" size={18} color={theme.colors.textSecondary} />
+          <TextInput
+            style={[styles.searchInput, { color: theme.colors.text }]}
+            placeholder={t('searchPlaceholder')}
+            placeholderTextColor={theme.colors.textSecondary}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchQuery('')}>
+              <Ionicons name="close-circle" size={18} color={theme.colors.textSecondary} />
+            </TouchableOpacity>
+          )}
+        </View>
+
+        <TouchableOpacity
+          style={[styles.filterButton, { backgroundColor: selectedArtist ? theme.colors.accent : theme.colors.background }]}
+          onPress={() => setShowArtistFilter(!showArtistFilter)}
+        >
+          <Ionicons name="people" size={18} color={selectedArtist ? 'white' : theme.colors.text} />
+        </TouchableOpacity>
+      </View>
+
+      {showArtistFilter && (
+        <Modal
+          visible={showArtistFilter}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setShowArtistFilter(false)}
+        >
+          <Pressable style={styles.modalOverlay} onPress={() => setShowArtistFilter(false)}>
+            <View style={[styles.artistDropdown, { backgroundColor: theme.colors.surface }]}>
+              <View style={[styles.artistDropdownHeader, { borderBottomColor: theme.colors.border }]}>
+                <Text style={[styles.artistDropdownTitle, { color: theme.colors.text }]}>
+                  {t('filterByArtist')}
+                </Text>
+                <TouchableOpacity onPress={() => setShowArtistFilter(false)}>
+                  <Ionicons name="close" size={24} color={theme.colors.text} />
+                </TouchableOpacity>
+              </View>
+              {uniqueArtists.length > 0 ? (
+                <ScrollView style={styles.artistDropdownList}>
+                  <TouchableOpacity
+                    style={[styles.artistDropdownItem, !selectedArtist && { backgroundColor: theme.colors.accent + '20' }]}
+                    onPress={() => {
+                      setSelectedArtist(null);
+                      setShowArtistFilter(false);
+                    }}
+                  >
+                    <Text style={[styles.artistDropdownText, { color: theme.colors.text }]}>
+                      {t('allArtists')}
+                    </Text>
+                    {!selectedArtist && <Ionicons name="checkmark" size={20} color={theme.colors.accent} />}
+                  </TouchableOpacity>
+                  {uniqueArtists.map(artist => (
+                    <TouchableOpacity
+                      key={artist}
+                      style={[styles.artistDropdownItem, selectedArtist === artist && { backgroundColor: theme.colors.accent + '20' }]}
+                      onPress={() => {
+                        setSelectedArtist(artist);
+                        setShowArtistFilter(false);
+                      }}
+                    >
+                      <Text style={[styles.artistDropdownText, { color: theme.colors.text }]} numberOfLines={1}>
+                        {artist}
+                      </Text>
+                      {selectedArtist === artist && <Ionicons name="checkmark" size={20} color={theme.colors.accent} />}
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              ) : (
+                <View style={styles.noArtistsContainer}>
+                  <Text style={[styles.noArtistsText, { color: theme.colors.textSecondary }]}>
+                    {t('noResults')}
+                  </Text>
+                </View>
+              )}
+            </View>
+          </Pressable>
+        </Modal>
+      )}
+
+      {filteredAlbums.length === 0 ? (
         <View style={styles.emptyContainer}>
           <Text style={[styles.emptyText, { color: theme.colors.textSecondary }]}>
-            {t('noAlbums')}
+            {albums.length === 0 ? t('noAlbums') : t('noResults')}
           </Text>
-          <Text style={[styles.emptySubText, { color: theme.colors.textSecondary }]}>
-            {t('addFirst')}
-          </Text>
+          {albums.length > 0 && (
+            <Text style={[styles.emptySubText, { color: theme.colors.textSecondary }]}>
+              {t('addFirst')}
+            </Text>
+          )}
         </View>
       ) : (
         <FlatList
-          data={albums}
+          data={filteredAlbums}
           keyExtractor={(item) => item.id.toString()}
           renderItem={renderItem}
           contentContainerStyle={styles.list}
         />
       )}
 
-      {/* Плавающая кнопка добавления нового альбома */}
       <TouchableOpacity
         style={[styles.fab, { backgroundColor: theme.colors.accent }]}
-        onPress={() => navigation.navigate('AddEditAlbum')}
+        onPress={() => navigation.navigate('SearchScreen', { mode: 'albums' })}
       >
         <Ionicons name="add" size={30} color="white" />
       </TouchableOpacity>
@@ -137,74 +241,35 @@ if (loading) {
   );
 }
 
-// Стили, зависящие от темы, мы уже применили через style={[...]},
-// но для статичных стилей (отступы, размеры) оставляем обычный StyleSheet.
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  list: {
-    padding: 16,
-  },
-  card: {
-    flexDirection: 'row',
-    borderRadius: 8,
-    marginBottom: 12,
-    padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-    alignItems: 'center',
-  },
-  cardContent: {
-    flex: 1,
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  artist: {
-    fontSize: 14,
-    marginTop: 4,
-  },
-  year: {
-    fontSize: 12,
-    marginTop: 4,
-  },
-  editButton: {
-    paddingHorizontal: 8,
-  },
-  deleteButton: {
-    paddingHorizontal: 8,
-  },
-  fab: {
-    position: 'absolute',
-    bottom: 24,
-    right: 24,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 8,
-  },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  emptyText: {
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
-  emptySubText: {
-    fontSize: 14,
-    marginTop: 8,
-  },
+  container: { flex: 1 },
+  searchContainer: { flexDirection: 'row', padding: 12, alignItems: 'center' },
+  searchInputContainer: { flex: 1, flexDirection: 'row', alignItems: 'center', borderRadius: 8, paddingHorizontal: 10, height: 40 },
+  searchInput: { flex: 1, marginLeft: 8, fontSize: 16 },
+  filterButton: { width: 40, height: 40, borderRadius: 8, justifyContent: 'center', alignItems: 'center', marginLeft: 8 },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
+  artistDropdown: { width: '80%', maxHeight: '60%', borderRadius: 12, overflow: 'hidden' },
+  artistDropdownHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1 },
+  artistDropdownTitle: { fontSize: 18, fontWeight: 'bold' },
+  artistDropdownList: { maxHeight: 300 },
+  artistDropdownItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 14, paddingHorizontal: 16 },
+  artistDropdownText: { fontSize: 16, flex: 1 },
+  noArtistsContainer: { padding: 20, alignItems: 'center' },
+  noArtistsText: { fontSize: 16 },
+  artistFilterContainer: { flexDirection: 'row', flexWrap: 'wrap', padding: 12, paddingTop: 0 },
+  artistChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, marginRight: 8, marginBottom: 8 },
+  artistChipText: { fontSize: 12 },
+  list: { padding: 16 },
+  card: { flexDirection: 'row', borderRadius: 8, marginBottom: 12, padding: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 3, alignItems: 'center' },
+  cover: { width: 60, height: 60, borderRadius: 8, backgroundColor: '#eee' },
+  coverPlaceholder: { width: 60, height: 60, borderRadius: 8, justifyContent: 'center', alignItems: 'center' },
+  cardContent: { flex: 1, marginLeft: 12 },
+  title: { fontSize: 18, fontWeight: 'bold' },
+  artist: { fontSize: 14, marginTop: 4 },
+  year: { fontSize: 12, marginTop: 4 },
+  deleteButton: { paddingHorizontal: 8 },
+  fab: { position: 'absolute', bottom: 24, right: 24, width: 56, height: 56, borderRadius: 28, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 4, elevation: 8 },
+  emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  emptyText: { fontSize: 20, fontWeight: 'bold' },
+  emptySubText: { fontSize: 14, marginTop: 8 },
 });

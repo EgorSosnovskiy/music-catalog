@@ -31,9 +31,9 @@ export default function MainTabs() {
         tabBarInactiveTintColor: theme.colors.textSecondary,
                 tabBarStyle: {
           backgroundColor: theme.colors.surface,
-          borderTopWidth: 0,        // убираем верхнюю границу
-          elevation: 0,              // убираем тень на Android
-          shadowOpacity: 0,          // убираем тень на iOS
+          borderTopWidth: 0,
+          elevation: 0,
+          shadowOpacity: 0,
         },
         headerStyle: { backgroundColor: theme.colors.surface },
         headerTintColor: theme.colors.text,

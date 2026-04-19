@@ -5,17 +5,15 @@ import {
   StyleSheet,
   Image,
   ScrollView,
-  TouchableOpacity,
-  Alert,
   ActivityIndicator,
+  Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import { ThemeContext } from '../context/ThemeContext';
-import { getAlbumById, deleteAlbum } from '../database';
+import { getAlbumById } from '../database';
 
-// Заглушка для обложки
-const placeholderImage = 'https://via.placeholder.com/300x300?text=No+Cover';
+const { width: screenWidth } = Dimensions.get('window');
 
 export default function AlbumDetails({ route, navigation }) {
   const { id } = route.params;
@@ -24,10 +22,9 @@ export default function AlbumDetails({ route, navigation }) {
   const { theme } = useContext(ThemeContext);
   const { t } = useTranslation();
 
-  // Динамический заголовок экрана
   useLayoutEffect(() => {
     navigation.setOptions({
-      title: t('albumDetails'), // ключ перевода
+      title: t('albumDetails'),
     });
   }, [navigation, t]);
 
@@ -40,29 +37,6 @@ export default function AlbumDetails({ route, navigation }) {
     const data = await getAlbumById(id);
     setAlbum(data);
     setLoading(false);
-  };
-
-  const handleEdit = () => {
-    navigation.navigate('AddEditAlbum', { album });
-  };
-
-  const handleDelete = () => {
-    Alert.alert(
-      t('deleteAlbumTitle'),      // "Удаление альбома"
-      t('deleteAlbumConfirmation'), // "Вы уверены, что хотите удалить этот альбом?"
-      [
-        { text: t('cancel'), style: 'cancel' },
-        {
-          text: t('delete'),
-          style: 'destructive',
-          onPress: async () => {
-            await deleteAlbum(id);
-            navigation.goBack();
-          },
-        },
-      ],
-      { cancelable: true }
-    );
   };
 
   if (loading) {
@@ -83,12 +57,13 @@ export default function AlbumDetails({ route, navigation }) {
 
   return (
     <ScrollView style={[styles.container, { backgroundColor: theme.colors.background }]}>
-      {/* Обложка */}
-      <Image
-        source={{ uri: album.coverUri || placeholderImage }}
-        style={styles.cover}
-        resizeMode="cover"
-      />
+      <View style={[styles.coverContainer, { backgroundColor: theme.colors.background }]}>
+        <Image
+          source={album.coverUri ? { uri: album.coverUri } : require('../../assets/icon.png')}
+          style={styles.cover}
+          resizeMode="contain"
+        />
+      </View>
 
       {/* Информация */}
       <View style={[styles.infoContainer, { backgroundColor: theme.colors.surface }]}>
@@ -104,6 +79,15 @@ export default function AlbumDetails({ route, navigation }) {
           </View>
         ) : null}
 
+        {album.playcount ? (
+          <View style={styles.row}>
+            <Ionicons name="play-circle-outline" size={20} color={theme.colors.textSecondary} />
+            <Text style={[styles.rowText, { color: theme.colors.textSecondary }]}>
+              {t('playcount') || 'Plays'}: {album.playcount}
+            </Text>
+          </View>
+        ) : null}
+
         {album.description ? (
           <View style={styles.descriptionContainer}>
             <Text style={[styles.descriptionLabel, { color: theme.colors.text }]}>
@@ -114,25 +98,6 @@ export default function AlbumDetails({ route, navigation }) {
             </Text>
           </View>
         ) : null}
-      </View>
-
-      {/* Кнопки действий */}
-      <View style={styles.actions}>
-        <TouchableOpacity
-          style={[styles.editButton, { backgroundColor: theme.colors.accent }]}
-          onPress={handleEdit}
-        >
-          <Ionicons name="pencil" size={20} color="white" />
-          <Text style={styles.buttonText}>{t('edit')}</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.deleteButton, { backgroundColor: theme.colors.error }]}
-          onPress={handleDelete}
-        >
-          <Ionicons name="trash" size={20} color="white" />
-          <Text style={styles.buttonText}>{t('delete')}</Text>
-        </TouchableOpacity>
       </View>
     </ScrollView>
   );
@@ -147,10 +112,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  cover: {
+  coverContainer: {
     width: '100%',
-    height: 300,
-    backgroundColor: '#e0e0e0', // можно оставить или заменить на theme, но это фон под картинкой
+    height: screenWidth,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  cover: {
+    width: screenWidth - 32,
+    height: screenWidth - 32,
+    borderRadius: 8,
   },
   infoContainer: {
     padding: 20,
@@ -163,12 +134,12 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   title: {
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: 'bold',
     marginBottom: 8,
   },
   artist: {
-    fontSize: 20,
+    fontSize: 18,
     marginBottom: 16,
   },
   row: {
@@ -191,35 +162,5 @@ const styles = StyleSheet.create({
   descriptionText: {
     fontSize: 16,
     lineHeight: 24,
-  },
-  actions: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    paddingHorizontal: 16,
-    paddingBottom: 30,
-  },
-  editButton: {
-    flexDirection: 'row',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-    alignItems: 'center',
-    flex: 0.45,
-    justifyContent: 'center',
-  },
-  deleteButton: {
-    flexDirection: 'row',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-    alignItems: 'center',
-    flex: 0.45,
-    justifyContent: 'center',
-  },
-  buttonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '600',
-    marginLeft: 8,
   },
 });

@@ -3,15 +3,17 @@ import {
   View,
   Text,
   StyleSheet,
+  Image,
   ScrollView,
-  TouchableOpacity,
-  Alert,
   ActivityIndicator,
+  Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import { ThemeContext } from '../context/ThemeContext';
-import { getTrackById, deleteTrack } from '../database';
+import { getTrackById } from '../database';
+
+const { width: screenWidth } = Dimensions.get('window');
 
 export default function TrackDetails({ route, navigation }) {
   const { id } = route.params;
@@ -37,29 +39,6 @@ export default function TrackDetails({ route, navigation }) {
     setLoading(false);
   };
 
-  const handleEdit = () => {
-    navigation.navigate('AddEditTrack', { track });
-  };
-
-  const handleDelete = () => {
-    Alert.alert(
-      t('deleteTrackTitle'),
-      t('deleteTrackConfirmation'),
-      [
-        { text: t('cancel'), style: 'cancel' },
-        {
-          text: t('delete'),
-          style: 'destructive',
-          onPress: async () => {
-            await deleteTrack(id);
-            navigation.goBack();
-          },
-        },
-      ],
-      { cancelable: true }
-    );
-  };
-
   if (loading) {
     return (
       <View style={[styles.centered, { backgroundColor: theme.colors.background }]}>
@@ -78,6 +57,22 @@ export default function TrackDetails({ route, navigation }) {
 
   return (
     <ScrollView style={[styles.container, { backgroundColor: theme.colors.background }]}>
+      {/* Обложка */}
+      <View style={[styles.coverContainer, { backgroundColor: theme.colors.background }]}>
+        {track.coverUri ? (
+          <Image
+            source={{ uri: track.coverUri }}
+            style={styles.cover}
+            resizeMode="contain"
+          />
+        ) : (
+          <View style={[styles.placeholderCover, { backgroundColor: theme.colors.surface }]}>
+            <Ionicons name="musical-notes" size={80} color={theme.colors.accent} />
+          </View>
+        )}
+      </View>
+
+      {/* Информация */}
       <View style={[styles.infoContainer, { backgroundColor: theme.colors.surface }]}>
         <Text style={[styles.title, { color: theme.colors.text }]}>{track.title}</Text>
         <Text style={[styles.artist, { color: theme.colors.textSecondary }]}>{track.artist}</Text>
@@ -90,24 +85,15 @@ export default function TrackDetails({ route, navigation }) {
             </Text>
           </View>
         ) : null}
-      </View>
 
-      <View style={styles.actions}>
-        <TouchableOpacity
-          style={[styles.editButton, { backgroundColor: theme.colors.accent }]}
-          onPress={handleEdit}
-        >
-          <Ionicons name="pencil" size={20} color="white" />
-          <Text style={styles.buttonText}>{t('edit')}</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.deleteButton, { backgroundColor: theme.colors.error }]}
-          onPress={handleDelete}
-        >
-          <Ionicons name="trash" size={20} color="white" />
-          <Text style={styles.buttonText}>{t('delete')}</Text>
-        </TouchableOpacity>
+        {track.playcount ? (
+          <View style={styles.row}>
+            <Ionicons name="play-circle-outline" size={20} color={theme.colors.textSecondary} />
+            <Text style={[styles.rowText, { color: theme.colors.textSecondary }]}>
+              {t('playcount') || 'Plays'}: {track.playcount}
+            </Text>
+          </View>
+        ) : null}
       </View>
     </ScrollView>
   );
@@ -122,6 +108,24 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  coverContainer: {
+    width: '100%',
+    height: screenWidth,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  placeholderCover: {
+    width: screenWidth - 32,
+    height: screenWidth - 32,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  cover: {
+    width: screenWidth - 32,
+    height: screenWidth - 32,
+    borderRadius: 8,
+  },
   infoContainer: {
     padding: 20,
     margin: 16,
@@ -133,12 +137,12 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   title: {
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: 'bold',
     marginBottom: 8,
   },
   artist: {
-    fontSize: 20,
+    fontSize: 18,
     marginBottom: 16,
   },
   row: {
@@ -148,36 +152,6 @@ const styles = StyleSheet.create({
   },
   rowText: {
     fontSize: 16,
-    marginLeft: 8,
-  },
-  actions: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    paddingHorizontal: 16,
-    paddingBottom: 30,
-  },
-  editButton: {
-    flexDirection: 'row',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-    alignItems: 'center',
-    flex: 0.45,
-    justifyContent: 'center',
-  },
-  deleteButton: {
-    flexDirection: 'row',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-    alignItems: 'center',
-    flex: 0.45,
-    justifyContent: 'center',
-  },
-  buttonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '600',
     marginLeft: 8,
   },
 });
