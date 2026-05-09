@@ -10,6 +10,8 @@ import {
   loadNotificationSettings, 
   cancelAllNotifications 
 } from '../services/NotificationService';
+import { logoutUser } from '../services/AuthService';
+import { Accelerometer } from 'expo-sensors';
 
 const NOTIF_ENABLED_KEY = 'notifications_enabled';
 const NOTIF_HOUR_KEY = 'notifications_hour';
@@ -27,6 +29,35 @@ export default function Settings({ navigation }) {
   const [notifRepeat, setNotifRepeat] = useState('daily');
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [expandHeight] = useState(new Animated.Value(0));
+
+  const [accelData, setAccelData] = useState({ x: 0, y: 0, z: 0 });
+  const [accelEnabled, setAccelEnabled] = useState(false);
+  const accelSubscription = React.useRef(null);
+
+  useEffect(() => {
+    return () => {
+      if (accelSubscription.current) {
+        accelSubscription.current.remove();
+      }
+    };
+  }, []);
+
+  const toggleAccelerometer = () => {
+    if (accelEnabled) {
+      if (accelSubscription.current) {
+        accelSubscription.current.remove();
+        accelSubscription.current = null;
+      }
+      Accelerometer.setUpdateInterval(1000);
+      setAccelEnabled(false);
+    } else {
+      Accelerometer.setUpdateInterval(500);
+      accelSubscription.current = Accelerometer.addListener(data => {
+        setAccelData(data);
+      });
+      setAccelEnabled(true);
+    }
+  };
 
   useEffect(() => {
     loadSettings();
@@ -123,6 +154,23 @@ export default function Settings({ navigation }) {
 
   const formatTime = (hour, minute) => {
     return `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+  };
+
+  const handleLogout = async () => {
+    Alert.alert(
+      t('confirmDelete') || 'Confirm',
+      t('logoutConfirm') || 'Are you sure you want to logout?',
+      [
+        { text: t('cancel') || 'Cancel', style: 'cancel' },
+        { 
+          text: t('logout') || 'Logout', 
+          style: 'destructive',
+          onPress: async () => {
+            await logoutUser();
+          }
+        }
+      ]
+    );
   };
 
   return (
@@ -250,6 +298,43 @@ export default function Settings({ navigation }) {
           <Text style={[styles.syncButtonText, { color: theme.colors.text }]}>{t('syncNow')}</Text>
         </TouchableOpacity>
       </View>
+
+      <View style={[styles.section, { backgroundColor: theme.colors.surface }]}>
+        <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>{t('accelerometer')}</Text>
+        <View style={styles.row}>
+          <Text style={[styles.optionText, { color: theme.colors.text }]}>{t('enableAccelerometer')}</Text>
+          <Switch
+            value={accelEnabled}
+            onValueChange={toggleAccelerometer}
+            trackColor={{ false: '#767577', true: theme.colors.accent }}
+            thumbColor={'#f4f3f4'}
+          />
+        </View>
+        {accelEnabled && (
+          <View style={styles.accelContainer}>
+            <Text style={[styles.accelText, { color: theme.colors.textSecondary }]}>
+              X: {accelData.x.toFixed(3)}
+            </Text>
+            <Text style={[styles.accelText, { color: theme.colors.textSecondary }]}>
+              Y: {accelData.y.toFixed(3)}
+            </Text>
+            <Text style={[styles.accelText, { color: theme.colors.textSecondary }]}>
+              Z: {accelData.z.toFixed(3)}
+            </Text>
+          </View>
+        )}
+      </View>
+
+      <View style={[styles.section, { backgroundColor: theme.colors.surface, marginTop: 20, borderColor: theme.colors.error || '#ff4444', borderWidth: 1 }]}>
+        <TouchableOpacity
+          style={styles.logoutButton}
+          onPress={handleLogout}
+        >
+          <Text style={[styles.logoutButtonText, { color: theme.colors.error || '#ff4444' }]}>
+            {t('logout') || 'Logout'}
+          </Text>
+        </TouchableOpacity>
+      </View>
     </ScrollView>
   );
 }
@@ -331,5 +416,24 @@ const styles = StyleSheet.create({
   syncButtonText: {
     marginLeft: 8,
     fontSize: 16,
+  },
+  logoutButton: {
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  logoutButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  accelContainer: {
+    marginTop: 12,
+    padding: 12,
+    borderRadius: 8,
+    backgroundColor: 'rgba(0,0,0,0.05)',
+  },
+  accelText: {
+    fontSize: 16,
+    fontFamily: 'monospace',
+    marginBottom: 4,
   },
 });

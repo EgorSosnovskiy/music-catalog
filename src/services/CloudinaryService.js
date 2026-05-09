@@ -6,6 +6,7 @@ const CLOUDINARY_CONFIG = {
 };
 
 const CLOUDINARY_UPLOAD_URL = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CONFIG.cloudName}/image/upload`;
+const CLOUDINARY_TIMEOUT = 15000; // 15 seconds
 
 export const uploadImageToCloudinary = async (imageUri) => {
   if (!imageUri) return null;
@@ -24,13 +25,19 @@ export const uploadImageToCloudinary = async (imageUri) => {
     formData.append('upload_preset', 'music_catalog_unsigned');
     formData.append('folder', CLOUDINARY_CONFIG.folder);
 
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), CLOUDINARY_TIMEOUT);
+
     const response = await fetch(CLOUDINARY_UPLOAD_URL, {
       method: 'POST',
       body: formData,
       headers: {
         'Content-Type': 'multipart/form-data',
       },
+      signal: controller.signal,
     });
+
+    clearTimeout(timeoutId);
 
     if (!response.ok) {
       throw new Error(`Upload failed: ${response.status}`);
@@ -40,7 +47,11 @@ export const uploadImageToCloudinary = async (imageUri) => {
     console.log('Cloudinary upload success:', data.secure_url);
     return data.secure_url;
   } catch (error) {
-    console.error('Error uploading to Cloudinary:', error);
+    if (error.name === 'AbortError') {
+      console.error('Cloudinary upload timeout after', CLOUDINARY_TIMEOUT, 'ms');
+    } else {
+      console.error('Error uploading to Cloudinary:', error.message);
+    }
     return null;
   }
 };

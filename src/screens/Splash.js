@@ -3,14 +3,19 @@ import { View, Image, StyleSheet } from 'react-native';
 import { ThemeContext } from '../context/ThemeContext';
 
 export default function Splash() {
-  const { theme, isDark } = useContext(ThemeContext);
+  const context = useContext(ThemeContext);
+  const { theme, isDark } = context || {};
+  
+  // Fallback theme if context is not available
+  const safeTheme = theme || { colors: { background: '#f5f5f5' } };
+  const safeIsDark = isDark || false;
 
-  const iconSource = isDark
-    ? require('../../assets/skull-icon-white.png')   // иконка для тёмной темы
-    : require('../../assets/skull-icon-black.png');       // иконка для светлой темы
+  const iconSource = safeIsDark
+    ? require('../../assets/skull-icon-white.png')
+    : require('../../assets/skull-icon-black.png');
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+    <View style={[styles.container, { backgroundColor: safeTheme.colors.background }]}>
       <Image source={iconSource} style={styles.logo} />
     </View>
   );

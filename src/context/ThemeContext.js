@@ -1,7 +1,24 @@
 import React, { createContext, useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-export const ThemeContext = createContext();
+export const ThemeContext = createContext({
+  theme: {
+    isDark: false,
+    colors: {
+      background: '#f5f5f5',
+      surface: '#ffffff',
+      text: '#000000',
+      textSecondary: '#666666',
+      accent: '#007AFF',
+      error: '#ff4444',
+      warning: '#ff9800',
+      info: '#2196f3',
+      border: '#dddddd',
+    },
+  },
+  isDark: false,
+  toggleTheme: () => {},
+});
 
 export const ThemeProvider = ({ children }) => {
   const [isDark, setIsDark] = useState(false);
@@ -41,6 +58,8 @@ export const ThemeProvider = ({ children }) => {
           textSecondary: '#aaaaaa',
           accent: '#bb86fc',
           error: '#cf6679',
+          warning: '#ff9800',
+          info: '#2196f3',
           border: '#333333',
         }
       : {
@@ -50,6 +69,8 @@ export const ThemeProvider = ({ children }) => {
           textSecondary: '#666666',
           accent: '#007AFF',
           error: '#ff4444',
+          warning: '#ff9800',
+          info: '#2196f3',
           border: '#dddddd',
         },
   };

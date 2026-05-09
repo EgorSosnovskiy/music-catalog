@@ -7,6 +7,8 @@ import {
   ScrollView,
   ActivityIndicator,
   Dimensions,
+  Share,
+  TouchableOpacity,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
@@ -22,11 +24,27 @@ export default function AlbumDetails({ route, navigation }) {
   const { theme } = useContext(ThemeContext);
   const { t } = useTranslation();
 
+  const handleShare = async () => {
+    if (!album) return;
+    const lines = [
+      `🎵 ${album.title}`,
+      album.artist ? `👤 ${album.artist}` : null,
+      album.releaseYear ? `📅 ${album.releaseYear}` : null,
+      album.description ? `\n${album.description}` : null,
+    ].filter(Boolean);
+    await Share.share({ message: lines.join('\n') });
+  };
+
   useLayoutEffect(() => {
     navigation.setOptions({
       title: t('albumDetails'),
+      headerRight: () => (
+        <TouchableOpacity onPress={handleShare} style={{ marginRight: 16 }}>
+          <Ionicons name="share-outline" size={24} color="#6200ee" />
+        </TouchableOpacity>
+      ),
     });
-  }, [navigation, t]);
+  }, [navigation, t, album]);
 
   useEffect(() => {
     loadAlbum();

@@ -1,35 +1,129 @@
 import * as SQLite from 'expo-sqlite';
+import { getCurrentUserId } from '../services/AuthService';
 
 let db;
 
-// Инициализация БД (создание таблиц)
-export const initDB = async () => {
-  try {
-
-    // Удаляем старую БД для чистой установки (для разработки)
-    //await SQLite.deleteDatabaseAsync('music.db');
+      // Инициализация БД (создание таблиц)
+      export const initDB = async () => {
+        try {
+          // Удаляем старую БД для чистой установки (для разработки)
+          // await SQLite.deleteDatabaseAsync('music.db');
+          
+          db = await SQLite.openDatabaseAsync('music.db');
     
-    db = await SQLite.openDatabaseAsync('music.db');
+    // Создаем таблицы с userId и created_at
     await db.execAsync(`
       CREATE TABLE IF NOT EXISTS albums (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        userId TEXT,
         title TEXT NOT NULL,
         artist TEXT NOT NULL,
         releaseYear TEXT,
         coverUri TEXT,
         description TEXT,
-        playcount TEXT
+        playcount TEXT,
+        created_at INTEGER DEFAULT 0
       );
       CREATE TABLE IF NOT EXISTS tracks (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        userId TEXT,
         title TEXT NOT NULL,
         artist TEXT NOT NULL,
         duration TEXT,
         coverUri TEXT,
-        playcount TEXT
+        playcount TEXT,
+        created_at INTEGER DEFAULT 0
+      );
+      CREATE TABLE IF NOT EXISTS sync_status (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        userId TEXT,
+        tableName TEXT,
+        recordId INTEGER,
+        synced INTEGER DEFAULT 0,
+        updatedAt TEXT DEFAULT CURRENT_TIMESTAMP
       );
     `);
     
+     // Добавляем столбец userId если его нет (миграция схемы)
+     try {
+       await db.execAsync(`ALTER TABLE albums ADD COLUMN userId TEXT`);
+       console.log('Added userId column to albums (schema migration)');
+     } catch (e) {
+       // Column already exists, ignore
+       if (process.env.EXPO_DEBUG) console.log('userId column already exists in albums');
+     }
+     
+     try {
+       await db.execAsync(`ALTER TABLE tracks ADD COLUMN userId TEXT`);
+       console.log('Added userId column to tracks (schema migration)');
+     } catch (e) {
+       // Column already exists, ignore
+       if (process.env.EXPO_DEBUG) console.log('userId column already exists in tracks');
+     }
+     
+     // Добавляем столбец created_at если его нет (миграция схемы)
+     try {
+       await db.execAsync(`ALTER TABLE albums ADD COLUMN created_at INTEGER DEFAULT 0`);
+       console.log('Added created_at column to albums (schema migration)');
+     } catch (e) {
+       // Check if error is about duplicate column
+       if (e.message && e.message.includes('duplicate column name')) {
+         if (process.env.EXPO_DEBUG) console.log('created_at column already exists in albums');
+       } else {
+         console.error('Error adding created_at column to albums:', e);
+         // Re-throw if it's not a duplicate column error
+         throw e;
+       }
+     }
+     
+     try {
+       await db.execAsync(`ALTER TABLE tracks ADD COLUMN created_at INTEGER DEFAULT 0`);
+       console.log('Added created_at column to tracks (schema migration)');
+     } catch (e) {
+       // Check if error is about duplicate column
+       if (e.message && e.message.includes('duplicate column name')) {
+         if (process.env.EXPO_DEBUG) console.log('created_at column already exists in tracks');
+       } else {
+         console.error('Error adding created_at column to tracks:', e);
+         // Re-throw if it's not a duplicate column error
+         throw e;
+       }
+     }
+    
+    try {
+      await db.execAsync(`ALTER TABLE sync_status ADD COLUMN userId TEXT`);
+      console.log('Added userId column to sync_status (schema migration)');
+    } catch (e) {
+      // Column already exists, ignore
+    }
+    
+    // Очищаем legacy записи (без userId) — они не будут видны никакому пользователю
+    try {
+      const albumsResult = await db.runAsync("DELETE FROM albums WHERE userId IS NULL OR userId = ''");
+      if (albumsResult.changes > 0) {
+        console.log('Cleaned', albumsResult.changes, 'orphaned album records');
+      }
+    } catch (e) {
+      console.log('No orphaned albums to clean');
+    }
+    
+    try {
+      const tracksResult = await db.runAsync("DELETE FROM tracks WHERE userId IS NULL OR userId = ''");
+      if (tracksResult.changes > 0) {
+        console.log('Cleaned', tracksResult.changes, 'orphaned track records');
+      }
+    } catch (e) {
+      console.log('No orphaned tracks to clean');
+    }
+    
+    try {
+      const syncResult = await db.runAsync("DELETE FROM sync_status WHERE userId IS NULL OR userId = ''");
+      if (syncResult.changes > 0) {
+        console.log('Cleaned', syncResult.changes, 'orphaned sync_status records');
+      }
+    } catch (e) {
+      console.log('No orphaned sync_status to clean');
+    }
     
     console.log('Database initialized');
   } catch (error) {
@@ -38,10 +132,15 @@ export const initDB = async () => {
   }
 };
 
+const getCurrentUserIdSafe = () => {
+  return getCurrentUserId();
+};
+
 // ---------- Альбомы ----------
 export const getAlbums = async () => {
   try {
-    return await db.getAllAsync('SELECT * FROM albums ORDER BY id DESC');
+    const userId = getCurrentUserIdSafe();
+    return await db.getAllAsync('SELECT * FROM albums WHERE userId = ? ORDER BY created_at DESC, id DESC', userId);
   } catch (error) {
     console.error('getAlbums error:', error);
     return [];
@@ -50,7 +149,9 @@ export const getAlbums = async () => {
 
 export const getAlbumById = async (id) => {
   try {
-    return await db.getFirstAsync('SELECT * FROM albums WHERE id = ?', id);
+    const userId = getCurrentUserIdSafe();
+    if (!userId) return null;
+    return await db.getFirstAsync('SELECT * FROM albums WHERE id = ? AND userId = ?', id, userId);
   } catch (error) {
     console.error('getAlbumById error:', error);
     return null;
@@ -59,10 +160,13 @@ export const getAlbumById = async (id) => {
 
 export const getAlbumByTitleAndArtist = async (title, artist) => {
   try {
+    const userId = getCurrentUserIdSafe();
+    if (!userId) return null;
     return await db.getFirstAsync(
-      'SELECT * FROM albums WHERE LOWER(title) = LOWER(?) AND LOWER(artist) = LOWER(?)',
+      'SELECT * FROM albums WHERE LOWER(title) = LOWER(?) AND LOWER(artist) = LOWER(?) AND userId = ?',
       title,
-      artist
+      artist,
+      userId
     );
   } catch (error) {
     console.error('getAlbumByTitleAndArtist error:', error);
@@ -70,16 +174,20 @@ export const getAlbumByTitleAndArtist = async (title, artist) => {
   }
 };
 
-export const insertAlbum = async (title, artist, releaseYear, coverUri, description, playcount) => {
+export const insertAlbum = async (title, artist, releaseYear, coverUri, description, playcount, createdAt = null) => {
   try {
+    const userId = getCurrentUserIdSafe();
+    const ts = createdAt || Date.now();
     const result = await db.runAsync(
-      'INSERT INTO albums (title, artist, releaseYear, coverUri, description, playcount) VALUES (?, ?, ?, ?, ?, ?)',
+      'INSERT INTO albums (userId, title, artist, releaseYear, coverUri, description, playcount, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      userId,
       title,
       artist,
       releaseYear,
       coverUri || '',
       description || '',
-      playcount || ''
+      playcount || '',
+      ts
     );
     return result.lastInsertRowId;
   } catch (error) {
@@ -90,15 +198,18 @@ export const insertAlbum = async (title, artist, releaseYear, coverUri, descript
 
 export const updateAlbum = async (id, title, artist, releaseYear, coverUri, description, playcount) => {
   try {
+    const userId = getCurrentUserIdSafe();
+    if (!userId) throw new Error('No authenticated user');
     await db.runAsync(
-      'UPDATE albums SET title = ?, artist = ?, releaseYear = ?, coverUri = ?, description = ?, playcount = ? WHERE id = ?',
+      'UPDATE albums SET title = ?, artist = ?, releaseYear = ?, coverUri = ?, description = ?, playcount = ? WHERE id = ? AND userId = ?',
       title,
       artist,
       releaseYear,
       coverUri || '',
       description || '',
       playcount || '',
-      id
+      id,
+      userId
     );
   } catch (error) {
     console.error('updateAlbum error:', error);
@@ -108,7 +219,9 @@ export const updateAlbum = async (id, title, artist, releaseYear, coverUri, desc
 
 export const deleteAlbum = async (id) => {
   try {
-    await db.runAsync('DELETE FROM albums WHERE id = ?', id);
+    const userId = getCurrentUserIdSafe();
+    if (!userId) throw new Error('No authenticated user');
+    await db.runAsync('DELETE FROM albums WHERE id = ? AND userId = ?', id, userId);
   } catch (error) {
     console.error('deleteAlbum error:', error);
     throw error;
@@ -118,7 +231,8 @@ export const deleteAlbum = async (id) => {
 // ---------- Треки ----------
 export const getTracks = async () => {
   try {
-    return await db.getAllAsync('SELECT * FROM tracks ORDER BY id DESC');
+    const userId = getCurrentUserIdSafe();
+    return await db.getAllAsync('SELECT * FROM tracks WHERE userId = ? ORDER BY created_at DESC, id DESC', userId);
   } catch (error) {
     console.error('getTracks error:', error);
     return [];
@@ -127,7 +241,9 @@ export const getTracks = async () => {
 
 export const getTrackById = async (id) => {
   try {
-    return await db.getFirstAsync('SELECT * FROM tracks WHERE id = ?', id);
+    const userId = getCurrentUserIdSafe();
+    if (!userId) return null;
+    return await db.getFirstAsync('SELECT * FROM tracks WHERE id = ? AND userId = ?', id, userId);
   } catch (error) {
     console.error('getTrackById error:', error);
     return null;
@@ -136,10 +252,13 @@ export const getTrackById = async (id) => {
 
 export const getTrackByTitleAndArtist = async (title, artist) => {
   try {
+    const userId = getCurrentUserIdSafe();
+    if (!userId) return null;
     return await db.getFirstAsync(
-      'SELECT * FROM tracks WHERE LOWER(title) = LOWER(?) AND LOWER(artist) = LOWER(?)',
+      'SELECT * FROM tracks WHERE LOWER(title) = LOWER(?) AND LOWER(artist) = LOWER(?) AND userId = ?',
       title,
-      artist
+      artist,
+      userId
     );
   } catch (error) {
     console.error('getTrackByTitleAndArtist error:', error);
@@ -147,15 +266,19 @@ export const getTrackByTitleAndArtist = async (title, artist) => {
   }
 };
 
-export const insertTrack = async (title, artist, duration, coverUri, playcount) => {
+export const insertTrack = async (title, artist, duration, coverUri, playcount, createdAt = null) => {
   try {
+    const userId = getCurrentUserIdSafe();
+    const ts = createdAt || Date.now();
     const result = await db.runAsync(
-      'INSERT INTO tracks (title, artist, duration, coverUri, playcount) VALUES (?, ?, ?, ?, ?)',
+      'INSERT INTO tracks (userId, title, artist, duration, coverUri, playcount, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      userId,
       title,
       artist,
       duration || '',
       coverUri || '',
-      playcount || ''
+      playcount || '',
+      ts
     );
     return result.lastInsertRowId;
   } catch (error) {
@@ -166,14 +289,17 @@ export const insertTrack = async (title, artist, duration, coverUri, playcount) 
 
 export const updateTrack = async (id, title, artist, duration, coverUri, playcount) => {
   try {
+    const userId = getCurrentUserIdSafe();
+    if (!userId) throw new Error('No authenticated user');
     await db.runAsync(
-      'UPDATE tracks SET title = ?, artist = ?, duration = ?, coverUri = ?, playcount = ? WHERE id = ?',
+      'UPDATE tracks SET title = ?, artist = ?, duration = ?, coverUri = ?, playcount = ? WHERE id = ? AND userId = ?',
       title,
       artist,
       duration || '',
       coverUri || '',
       playcount || '',
-      id
+      id,
+      userId
     );
   } catch (error) {
     console.error('updateTrack error:', error);
@@ -183,7 +309,9 @@ export const updateTrack = async (id, title, artist, duration, coverUri, playcou
 
 export const deleteTrack = async (id) => {
   try {
-    await db.runAsync('DELETE FROM tracks WHERE id = ?', id);
+    const userId = getCurrentUserIdSafe();
+    if (!userId) throw new Error('No authenticated user');
+    await db.runAsync('DELETE FROM tracks WHERE id = ? AND userId = ?', id, userId);
   } catch (error) {
     console.error('deleteTrack error:', error);
     throw error;
@@ -191,12 +319,12 @@ export const deleteTrack = async (id) => {
 };
 
 // ---------- Поиск, фильтрация, сортировка ----------
-
-// Типы сортировки: 'title_asc', 'title_desc', 'year_desc', 'year_asc', 'playcount_desc', 'playcount_asc'
 export const getAlbumsFiltered = async ({ search = '', sortBy = 'title_asc', artist = null, yearFrom = null, yearTo = null, hasCover = null }) => {
   try {
-    let query = 'SELECT * FROM albums WHERE 1=1';
-    const params = [];
+    const userId = getCurrentUserIdSafe();
+    if (!userId) return [];
+    let query = 'SELECT * FROM albums WHERE userId = ?';
+    const params = [userId];
 
     if (search.trim()) {
       query += ' AND (title LIKE ? OR artist LIKE ?)';
@@ -257,8 +385,10 @@ export const getAlbumsFiltered = async ({ search = '', sortBy = 'title_asc', art
 
 export const getTracksFiltered = async ({ search = '', sortBy = 'title_asc', artist = null, hasCover = null }) => {
   try {
-    let query = 'SELECT * FROM tracks WHERE 1=1';
-    const params = [];
+    const userId = getCurrentUserIdSafe();
+    if (!userId) return [];
+    let query = 'SELECT * FROM tracks WHERE userId = ?';
+    const params = [userId];
 
     if (search.trim()) {
       query += ' AND (title LIKE ? OR artist LIKE ?)';
@@ -304,9 +434,15 @@ export const getTracksFiltered = async ({ search = '', sortBy = 'title_asc', art
 // ---------- Статус синхронизации ----------
 export const addSyncStatus = async (tableName, recordId, synced = false) => {
   try {
+    const userId = getCurrentUserIdSafe();
+    if (!userId) {
+      console.warn('No user for sync status');
+      return;
+    }
     await db.runAsync(
       `CREATE TABLE IF NOT EXISTS sync_status (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        userId TEXT,
         tableName TEXT,
         recordId INTEGER,
         synced INTEGER DEFAULT 0,
@@ -314,7 +450,8 @@ export const addSyncStatus = async (tableName, recordId, synced = false) => {
       )`
     );
     await db.runAsync(
-      'INSERT INTO sync_status (tableName, recordId, synced) VALUES (?, ?, ?)',
+      'INSERT INTO sync_status (userId, tableName, recordId, synced) VALUES (?, ?, ?, ?)',
+      userId,
       tableName,
       recordId,
       synced ? 1 : 0
@@ -326,8 +463,11 @@ export const addSyncStatus = async (tableName, recordId, synced = false) => {
 
 export const getUnsyncedRecords = async (tableName) => {
   try {
+    const userId = getCurrentUserIdSafe();
+    if (!userId) return [];
     const result = await db.getAllAsync(
-      'SELECT * FROM sync_status WHERE tableName = ? AND synced = 0',
+      'SELECT * FROM sync_status WHERE userId = ? AND tableName = ? AND synced = 0',
+      userId,
       tableName
     );
     return result;
@@ -339,12 +479,39 @@ export const getUnsyncedRecords = async (tableName) => {
 
 export const markAsSynced = async (tableName, recordId) => {
   try {
+    const userId = getCurrentUserIdSafe();
+    if (!userId) {
+      console.warn('No user for marking synced');
+      return;
+    }
     await db.runAsync(
-      'UPDATE sync_status SET synced = 1, updatedAt = CURRENT_TIMESTAMP WHERE tableName = ? AND recordId = ?',
+      'UPDATE sync_status SET synced = 1, updatedAt = CURRENT_TIMESTAMP WHERE userId = ? AND tableName = ? AND recordId = ?',
+      userId,
       tableName,
       recordId
     );
   } catch (error) {
     console.error('markAsSynced error:', error);
   }
+};
+
+export default {
+  initDB,
+  getAlbums,
+  getAlbumById,
+  getAlbumByTitleAndArtist,
+  insertAlbum,
+  updateAlbum,
+  deleteAlbum,
+  getTracks,
+  getTrackById,
+  getTrackByTitleAndArtist,
+  insertTrack,
+  updateTrack,
+  deleteTrack,
+  getAlbumsFiltered,
+  getTracksFiltered,
+  addSyncStatus,
+  getUnsyncedRecords,
+  markAsSynced,
 };

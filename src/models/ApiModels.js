@@ -2,20 +2,19 @@
  * Модели данных для API ответов Last.fm
  */
 
-
 /**
  * Нормализация данных альбома из API
  */
 export const normalizeAlbum = (album) => {
   if (!album) return null;
-
+  
   return {
-    mbid: album.mbid || '',
-    name: album.name || '',
-    artist: album.artist || '',
-    url: album.url || '',
+    mbid: album.mbid || "",
+    name: album.name || "",
+    artist: album.artist || "",
+    url: album.url || "",
     image: album.image || [],
-  };
+};
 };
 
 /**
@@ -24,17 +23,18 @@ export const normalizeAlbum = (album) => {
 export const normalizeTrack = (track) => {
   if (!track) return null;
 
-  const artistName = typeof track.artist === 'string' ? track.artist : track.artist?.name || '';
+  const artistName =
+    typeof track.artist === "string" ? track.artist : track.artist?.name || "";
   const artistImage = track.artist?.image || [];
 
   return {
-    mbid: track.mbid || '',
-    name: track.name || '',
+    mbid: track.mbid || "",
+    name: track.name || "",
     artist: artistName,
     artistImage: artistImage,
-    url: track.url || '',
+    url: track.url || "",
     image: track.image || [],
-    duration: parseInt(track.duration || '0', 10),
+    duration: parseInt(track.duration || "0", 10),
   };
 };
 
@@ -56,8 +56,8 @@ export const normalizeAlbumSearchResults = (data) => {
 
   return {
     albums: albums.map(normalizeAlbum),
-    totalResults: parseInt(data.results['opensearch:totalResults'] || '0', 10),
-    totalPages: parseInt(data.results['opensearch:totalPages'] || '0', 10),
+    totalResults: parseInt(data.results["opensearch:totalResults"] || "0", 10),
+    totalPages: parseInt(data.results["opensearch:totalPages"] || "0", 10),
   };
 };
 
@@ -79,29 +79,29 @@ export const normalizeTrackSearchResults = (data) => {
 
   return {
     tracks: tracks.map(normalizeTrack),
-    totalResults: parseInt(data.results['opensearch:totalResults'] || '0', 10),
-    totalPages: parseInt(data.results['opensearch:totalPages'] || '0', 10),
+    totalResults: parseInt(data.results["opensearch:totalResults"] || "0", 10),
+    totalPages: parseInt(data.results["opensearch:totalPages"] || "0", 10),
   };
 };
 
 /**
  * Получить URL изображения нужного размера
  */
-export const getImageUrl = (images, size = 'medium') => {
+export const getImageUrl = (images, size = "medium") => {
   if (!images || !Array.isArray(images)) return null;
-  
+
   const sizeMap = {
-    small: 'small',
-    medium: 'medium',
-    large: 'large',
-    extralarge: 'extralarge',
-    mega: 'mega',
+    small: "small",
+    medium: "medium",
+    large: "large",
+    extralarge: "extralarge",
+    mega: "mega",
   };
 
-  const targetSize = sizeMap[size] || 'medium';
-  const image = images.find(img => img.size === targetSize);
-  
-  return image?.['#text'] || images[0]?.['#text'] || null;
+  const targetSize = sizeMap[size] || "medium";
+  const image = images.find((img) => img.size === targetSize);
+
+  return image?.["#text"] || images[0]?.["#text"] || null;
 };
 
 /**
@@ -122,8 +122,8 @@ export const normalizeArtistSearchResults = (data) => {
 
   return {
     artists: artists.map(normalizeArtist),
-    totalResults: parseInt(data.results['opensearch:totalResults'] || '0', 10),
-    totalPages: parseInt(data.results['opensearch:totalPages'] || '0', 10),
+    totalResults: parseInt(data.results["opensearch:totalResults"] || "0", 10),
+    totalPages: parseInt(data.results["opensearch:totalPages"] || "0", 10),
   };
 };
 
@@ -134,11 +134,11 @@ export const normalizeArtist = (artist) => {
   if (!artist) return null;
 
   return {
-    mbid: artist.mbid || '',
-    name: artist.name || '',
-    url: artist.url || '',
+    mbid: artist.mbid || "",
+    name: artist.name || "",
+    url: artist.url || "",
     image: artist.image || [],
-    listeners: artist.listeners || '',
+    listeners: artist.listeners || "",
   };
 };
 

@@ -7,6 +7,8 @@ import {
   ScrollView,
   ActivityIndicator,
   Dimensions,
+  Share,
+  TouchableOpacity,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
@@ -22,11 +24,26 @@ export default function TrackDetails({ route, navigation }) {
   const { theme } = useContext(ThemeContext);
   const { t } = useTranslation();
 
+  const handleShare = async () => {
+    if (!track) return;
+    const lines = [
+      `🎵 ${track.title}`,
+      track.artist ? `👤 ${track.artist}` : null,
+      track.duration ? `⏱ ${track.duration}` : null,
+    ].filter(Boolean);
+    await Share.share({ message: lines.join('\n') });
+  };
+
   useLayoutEffect(() => {
     navigation.setOptions({
       title: t('trackDetails'),
+      headerRight: () => (
+        <TouchableOpacity onPress={handleShare} style={{ marginRight: 16 }}>
+          <Ionicons name="share-outline" size={24} color="#6200ee" />
+        </TouchableOpacity>
+      ),
     });
-  }, [navigation, t]);
+  }, [navigation, t, track]);
 
   useEffect(() => {
     loadTrack();

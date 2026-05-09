@@ -1,20 +1,123 @@
-import { useState, useCallback } from 'react';
-import { getTracks, getTrackById, getTrackByTitleAndArtist, insertTrack, updateTrack, deleteTrack } from '../database';
+import { useState, useCallback, useEffect, useRef } from 'react';
+import { 
+  getTracks, 
+  getTrackById, 
+  getTrackByTitleAndArtist, 
+  insertTrack, 
+  updateTrack, 
+  deleteTrack 
+} from '../database';
 import { syncTrackAdded, syncTrackDeleted } from '../services/SyncService';
+import { getCurrentUserId } from '../services/AuthService';
+import { subscribeToTracks } from '../services/FirebaseService';
+import firebaseService from '../services/FirebaseService';
 
-/**
- * ViewModel для управления треками
- * Реализует паттерн MVVM - инкапсулирует бизнес-логику
- */
 export const useTracksViewModel = () => {
   const [tracks, setTracks] = useState([]);
   const [currentTrack, setCurrentTrack] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [isRealtimeEnabled, setIsRealtimeEnabled] = useState(false);
+  const unsubscribeRef = useRef(null);
 
-  /**
-   * Загрузить все треки
-   */
+  const getTrackKey = (track) => {
+    return `${(track.title || '').toLowerCase().trim()}_${(track.artist || '').toLowerCase().trim()}`;
+  };
+
+  const getTimestamp = (value) => {
+    if (!value) return 0;
+    if (value.toDate) return value.toDate().getTime();
+    if (typeof value === 'string') return new Date(value).getTime();
+    if (typeof value === 'number') return value;
+    return 0;
+  };
+
+  const syncTracksFromFirestore = useCallback(async (firestoreTracks) => {
+    try {
+      const userId = getCurrentUserId();
+      if (!userId) return;
+
+      const localTracks = await getTracks();
+      const localByKey = new Map();
+      for (const t of localTracks) {
+        localByKey.set(getTrackKey(t), t);
+      }
+
+      const firestoreKeys = new Set();
+
+      for (const ft of firestoreTracks) {
+        const key = getTrackKey(ft);
+        firestoreKeys.add(key);
+        const existing = localByKey.get(key);
+        
+        let createdAt = getTimestamp(ft.createdAt);
+        if (createdAt === 0) createdAt = Date.now();
+        
+        if (existing) {
+          await updateTrack(
+            existing.id,
+            ft.title,
+            ft.artist,
+            ft.duration,
+            ft.coverUri,
+            ft.playcount
+          );
+        } else {
+          await insertTrack(
+            ft.title,
+            ft.artist,
+            ft.duration,
+            ft.coverUri,
+            ft.playcount,
+            createdAt
+          );
+        }
+      }
+
+      // Delete missing
+      for (const [key, local] of localByKey) {
+        if (!firestoreKeys.has(key)) {
+          await deleteTrack(local.id);
+        }
+      }
+
+    } catch (err) {
+      console.error('Error syncing tracks from Firestore:', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    const userId = getCurrentUserId();
+    if (!userId) {
+      if (unsubscribeRef.current) {
+        unsubscribeRef.current();
+        unsubscribeRef.current = null;
+      }
+      return;
+    }
+
+    setIsRealtimeEnabled(true);
+
+    const unsubscribe = subscribeToTracks(userId, (firestoreTracks) => {
+      syncTracksFromFirestore(firestoreTracks);
+      
+      const sorted = [...firestoreTracks].sort((a, b) => {
+        return getTimestamp(b.createdAt) - getTimestamp(a.createdAt);
+      });
+      setTracks(sorted);
+    });
+
+    unsubscribeRef.current = unsubscribe;
+
+    return () => {
+      if (unsubscribeRef.current) {
+        unsubscribeRef.current();
+        unsubscribeRef.current = null;
+      }
+      setIsRealtimeEnabled(false);
+    };
+  }, [syncTracksFromFirestore]);
+
   const loadTracks = useCallback(async (showLoader = true) => {
     if (showLoader) setLoading(true);
     setError(null);
@@ -29,9 +132,6 @@ export const useTracksViewModel = () => {
     }
   }, []);
 
-  /**
-   * Загрузить трек по ID
-   */
   const loadTrackById = useCallback(async (id) => {
     setLoading(true);
     setError(null);
@@ -48,9 +148,6 @@ export const useTracksViewModel = () => {
     }
   }, []);
 
-  /**
-   * Создать новый трек
-   */
   const createTrack = useCallback(async (title, artist, duration, coverUri, playcount) => {
     setLoading(true);
     setError(null);
@@ -63,10 +160,17 @@ export const useTracksViewModel = () => {
       }
       
       const id = await insertTrack(title, artist, duration, coverUri, playcount);
-      await loadTracks(false);
       
-      const newTrack = { id, title, artist, duration, coverUri, playcount };
-      syncTrackAdded(newTrack);
+      syncTrackAdded({
+        id,
+        title,
+        artist,
+        duration,
+        coverUri,
+        playcount,
+      });
+      
+      await loadTracks(false);
       
       return id;
     } catch (err) {
@@ -77,9 +181,6 @@ export const useTracksViewModel = () => {
     }
   }, [loadTracks]);
 
-  /**
-   * Обновить трек
-   */
   const editTrack = useCallback(async (id, title, artist, duration, coverUri) => {
     setLoading(true);
     setError(null);
@@ -95,17 +196,14 @@ export const useTracksViewModel = () => {
     }
   }, [loadTracks]);
 
-  /**
-   * Удалить трек
-   */
   const removeTrack = useCallback(async (id) => {
     setLoading(true);
     setError(null);
     
     try {
       await deleteTrack(id);
-      await loadTracks(false);
       syncTrackDeleted(id);
+      await loadTracks(false);
     } catch (err) {
       setError(err.message || 'Ошибка удаления трека');
       throw err;
@@ -114,21 +212,17 @@ export const useTracksViewModel = () => {
     }
   }, [loadTracks]);
 
-  /**
-   * Очистить текущий трек
-   */
   const clearCurrentTrack = useCallback(() => {
     setCurrentTrack(null);
   }, []);
 
   return {
-    // Состояние
     tracks,
     currentTrack,
     loading,
     error,
+    isRealtimeEnabled,
     
-    // Методы
     loadTracks,
     loadTrackById,
     createTrack,

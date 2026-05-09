@@ -1,13 +1,33 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { networkService } from './NetworkService';
 import firebaseService from './FirebaseService';
+import { getCurrentUserId } from './AuthService';
 
 const SYNC_QUEUE_KEY = 'sync_queue';
-const USER_ID = 'default-user';
 const SYNC_DELAY = 2000;
 
 let syncTimeout = null;
 let isSyncing = false;
+let syncStatusListeners = [];
+
+const notifyStatusChange = (status) => {
+  syncStatusListeners.forEach(listener => listener(status));
+};
+
+export const addSyncStatusListener = (listener) => {
+  syncStatusListeners.push(listener);
+  return () => {
+    syncStatusListeners = syncStatusListeners.filter(l => l !== listener);
+  };
+};
+
+export const getSyncStatus = async () => {
+  const queue = await getSyncQueue();
+  return {
+    queueLength: queue.length,
+    isSyncing,
+  };
+};
 
 export const initializeSyncService = async () => {
   await firebaseService.initializeFirebase();
@@ -21,6 +41,11 @@ const handleNetworkChange = (isConnected) => {
   }
 };
 
+const getUserId = () => {
+  const uid = getCurrentUserId();
+  return uid;
+};
+
 export const addToSyncQueue = async (operation) => {
   try {
     const queue = await getSyncQueue();
@@ -30,6 +55,8 @@ export const addToSyncQueue = async (operation) => {
     });
     await saveSyncQueue(queue);
     console.log('Added to sync queue:', operation.type);
+    
+    notifyStatusChange({ queueLength: queue.length + 1, isSyncing });
     
     scheduleSync();
   } catch (error) {
@@ -81,14 +108,21 @@ export const processSyncQueue = async () => {
     return;
   }
   
+  const userId = getUserId();
+  if (!userId) {
+    console.log('No authenticated user, skipping sync');
+    return;
+  }
+  
   const queue = await getSyncQueue();
   
   if (queue.length === 0) {
-    console.log('Sync queue is empty');
+    notifyStatusChange({ queueLength: 0, isSyncing: false });
     return;
   }
   
   isSyncing = true;
+  notifyStatusChange({ queueLength: queue.length, isSyncing: true });
   console.log('Processing sync queue, items:', queue.length);
   
   const results = { success: 0, failed: 0 };
@@ -97,19 +131,19 @@ export const processSyncQueue = async () => {
     try {
       switch (operation.type) {
         case 'create_album':
-          await firebaseService.uploadAlbumToFirestore(USER_ID, operation.data);
+          await firebaseService.uploadAlbumToFirestore(userId, operation.data);
           results.success++;
           break;
         case 'create_track':
-          await firebaseService.uploadTrackToFirestore(USER_ID, operation.data);
+          await firebaseService.uploadTrackToFirestore(userId, operation.data);
           results.success++;
           break;
         case 'delete_album':
-          await firebaseService.deleteAlbumFromFirestore(USER_ID, operation.data.id);
+          await firebaseService.deleteAlbumFromFirestore(userId, operation.data.id);
           results.success++;
           break;
         case 'delete_track':
-          await firebaseService.deleteTrackFromFirestore(USER_ID, operation.data.id);
+          await firebaseService.deleteTrackFromFirestore(userId, operation.data.id);
           results.success++;
           break;
         default:
@@ -124,13 +158,16 @@ export const processSyncQueue = async () => {
   if (results.failed === 0) {
     await saveSyncQueue([]);
     console.log('Sync completed successfully:', results);
+    notifyStatusChange({ queueLength: 0, isSyncing: false });
   } else {
     const failedOps = queue.slice(-results.failed);
     await saveSyncQueue(failedOps);
     console.log('Sync completed with errors:', results);
+    notifyStatusChange({ queueLength: results.failed, isSyncing: false });
   }
   
   isSyncing = false;
+  notifyStatusChange({ queueLength: results.failed, isSyncing: false });
 };
 
 export const syncAlbumAdded = (album) => {

@@ -14,8 +14,8 @@ import networkService from '../services/NetworkService';
 import { useNetworkStatus } from '../services/NetworkService';
 import { getAlbums, getTracks } from '../database';
 import firebaseService from '../services/FirebaseService';
-
-const USER_ID = 'default-user';
+import { getCurrentUserId } from '../services/AuthService';
+import { addSyncStatusListener, getSyncStatus } from '../services/SyncService';
 
 export default function SyncScreen({ navigation }) {
   const { t } = useTranslation();
@@ -25,9 +25,22 @@ export default function SyncScreen({ navigation }) {
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState('idle');
   const [firebaseReady, setFirebaseReady] = useState(false);
+  const [syncInfo, setSyncInfo] = useState({ queueLength: 0, isSyncing: false });
 
   useEffect(() => {
     initFirebase();
+    
+    // Subscribe to sync status updates
+    const unsubscribe = addSyncStatusListener((info) => {
+      setSyncInfo(info);
+    });
+    
+    // Initial status fetch
+    getSyncStatus().then(setSyncInfo);
+
+    return () => {
+      unsubscribe();
+    };
   }, []);
 
   const initFirebase = async () => {
@@ -46,6 +59,12 @@ export default function SyncScreen({ navigation }) {
       return;
     }
 
+    const userId = getCurrentUserId();
+    if (!userId) {
+      Alert.alert(t('error'), 'No authenticated user');
+      return;
+    }
+
     setLoading(true);
     setStatus('syncing');
 
@@ -53,7 +72,7 @@ export default function SyncScreen({ navigation }) {
       const albums = await getAlbums();
       const tracks = await getTracks();
 
-      const result = await firebaseService.syncAllData(USER_ID, albums, tracks);
+      const result = await firebaseService.syncAllData(userId, albums, tracks);
       
       if (result.success) {
         setStatus('complete');
@@ -125,6 +144,25 @@ export default function SyncScreen({ navigation }) {
             </Text>
           </View>
         </View>
+        
+        {/* Sync Queue Indicator */}
+        {syncInfo.queueLength > 0 && (
+          <View style={[styles.syncQueueIndicator, { backgroundColor: theme.colors.warning || '#ff9800' }]}>
+            <Ionicons name="time" size={16} color="white" />
+            <Text style={[styles.syncQueueText, { color: 'white' }]}>
+              {syncInfo.queueLength} {t('pendingChanges', 'pending changes')}
+            </Text>
+          </View>
+        )}
+        
+        {syncInfo.isSyncing && (
+          <View style={[styles.syncingIndicator, { backgroundColor: theme.colors.info || '#2196f3' }]}>
+            <ActivityIndicator size="small" color="white" />
+            <Text style={[styles.syncingText, { color: 'white' }]}>
+              {t('syncing')}...
+            </Text>
+          </View>
+        )}
       </View>
     </View>
   );
@@ -194,5 +232,31 @@ const styles = StyleSheet.create({
   statusItemText: {
     marginTop: 4,
     fontSize: 14,
+  },
+  syncQueueIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 12,
+    padding: 8,
+    borderRadius: 8,
+    gap: 6,
+  },
+  syncQueueText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  syncingIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 8,
+    padding: 8,
+    borderRadius: 8,
+    gap: 6,
+  },
+  syncingText: {
+    fontSize: 14,
+    fontWeight: '600',
   },
 });
